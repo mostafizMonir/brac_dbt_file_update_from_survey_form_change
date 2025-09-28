@@ -1,0 +1,13 @@
+i have a remote bitbucket repository "https://bitbucket.org/jantrik/brac_dbt/src/dev/" dev branch. i have postgres database. credentials :
+server=202.4.127.189
+Port=5632
+User=postgres
+Password=P0StGr35**
+database: monir_brac_mne_data
+
+there a table called survey_form.there a column named table_name. i will give you survey_form table id. you find that survey form. then execute postgres query replace "survey_form_id" after where clause with survey_form table id in survey_flat_table_gen_from_ans.txt in this directory. make survey_form table id configurable. after executing survey_flat_table_gen_from_ans.txt query you will find a query output. then again execute that query output. then you will find final output. 
+
+you git clone if repo not exists or git pull. then go to dev branch. then go to brac_dbt/brac_dbt_code/models/data_mart directory. in the data_mart folder you find a sql file  that table_name value with .sql suffix. if not found then create a .sql file table_name.sql format. if found then edit the file. you replace all sql query in that file with you final output.
+then add new file to git if file not exists. then commit and push to remote. commit message will be update or new survey form data with form id.
+
+create a python flask api. docker compose file. i will hit api with survey_form table id and then trigger the work.

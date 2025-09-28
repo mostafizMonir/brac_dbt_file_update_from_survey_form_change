@@ -1,0 +1,26 @@
+
+services:
+  flask-app:
+    build: .
+    container_name: brac-dbt-updater
+    ports:
+      - "5000:5000"
+    environment:
+      - DB_HOST=${DB_HOST:-202.4.127.189}
+      - DB_PORT=${DB_PORT:-5632}
+      - DB_NAME=${DB_NAME:-monir_brac_mne_data}
+      - DB_USER=${DB_USER:-postgres}
+      - DB_PASSWORD=${DB_PASSWORD:-P0StGr35**}
+      - BITBUCKET_USERNAME=${BITBUCKET_USERNAME:-monir_mostafizur}
+      - BITBUCKET_API_TOKEN=${BITBUCKET_API_TOKEN}
+      - FLASK_ENV=production
+    volumes:
+      - ./brac_dbt:/app/brac_dbt
+      - ./context:/app/context
+    restart: unless-stopped
+    networks:
+      - app-network
+
+networks:
+  app-network:
+    driver: bridge

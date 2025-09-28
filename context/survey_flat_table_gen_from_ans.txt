@@ -1,0 +1,23 @@
+with A as (
+select regexp_replace(de.id, '.*:(.*)', '\1') as var_id,  de.data_element_column_name as var_name,
+'when survey_data.answer::jsonb->>''' || regexp_replace(de.id, '.*:(.*)', '\1') || ''' = ''' || deo.value || ''' then ''' || replace(deo.name, '''', '''''') || '''' as when_clause
+from public.survey_data_element_member sdem
+left join public.data_element de
+on de.id = sdem.data_element_id
+left join public.data_element_option deo
+on de.id = deo.data_element_id
+where survey_form_id = '61f011e4405549849bffe813d12ee511'
+),
+B as (
+select 'survey_data.answer::jsonb->>'''||A.var_id||''' as ' || A.var_name as var_name,
+chr(10) || 'survey_data.answer::jsonb->>''' || A.var_id || ''' as ' || A.var_name || chr(10) || ', case ' || string_agg(A.when_clause, ' ') || ' end as ' || A.var_name || '_text' as extra_columns
+from A
+group by A.var_id,A.var_name
+order by A.var_name
+)
+select 'select survey_data.id, survey_data.item_id, survey_data.create_time,
+survey_data.last_modified_time, survey_data.catchment_id, survey_data.created_by, survey_data.last_modified_by, survey_data.country_id, survey_data.project_id, survey_data.fiscal_year_id, survey_data.office_id,
+survey_data.process_data,'
+|| string_agg(coalesce(extra_columns, var_name), ', ') ||
+' from survey_view as survey_data where survey_data.survey_form_id = ''61f011e4405549849bffe813d12ee511'''
+from B;
