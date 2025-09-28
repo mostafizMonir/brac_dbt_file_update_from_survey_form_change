@@ -44,24 +44,42 @@ def get_db_connection():
     """Create and return a database connection"""
     return psycopg2.connect(**DB_CONFIG)
 
-def get_table_name_from_survey_form(survey_form_id):
-    """Get table_name from survey_form table for given id"""
+def get_dbt_file_name_from_survey_form(survey_form_id):
+    """Get DBT file name from warehouse_dbt_files_survey_form_mapping table,
+    fallback to survey_form table if not found"""
     conn = None
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
 
+        # First, try to get warehouse_dbt_file_name from mapping table
+        mapping_query = """
+            SELECT warehouse_dbt_file_name
+            FROM warehouse_dbt_files_survey_form_mapping
+            WHERE survey_form_id = %s
+            AND warehouse_dbt_file_name IS NOT NULL
+        """
+        cursor.execute(mapping_query, (survey_form_id,))
+        mapping_result = cursor.fetchone()
+
+        if mapping_result and mapping_result[0]:
+            logger.info(f"Found DBT file name in mapping table: {mapping_result[0]}")
+            return mapping_result[0]
+
+        # If not found in mapping table, fallback to survey_form table
+        logger.info("DBT file name not found in mapping table, checking survey_form table")
         query = "SELECT table_name FROM survey_form WHERE id = %s"
         cursor.execute(query, (survey_form_id,))
         result = cursor.fetchone()
 
         if result:
+            logger.info(f"Using table_name from survey_form table: {result[0]}")
             return result[0]
         else:
             raise ValueError(f"No survey form found with id: {survey_form_id}")
 
     except Exception as e:
-        logger.error(f"Error getting table name: {e}")
+        logger.error(f"Error getting DBT file name: {e}")
         raise
     finally:
         if conn:
@@ -231,9 +249,11 @@ class HealthCheck(Resource):
 survey_response_model = api.model('SurveyResponse', {
     'status': fields.String(description='Processing status'),
     'survey_form_id': fields.String(description='Survey form ID'),
-    'table_name': fields.String(description='Generated table name'),
+    'dbt_file_name': fields.String(description='DBT file name'),
     'file_path': fields.String(description='DBT file path'),
     'action': fields.String(description='Action taken (created/updated)'),
+    'changes_pushed': fields.Boolean(description='Whether changes were pushed to repository'),
+    'message': fields.String(description='Status message'),
     'timestamp': fields.String(description='Processing timestamp')
 })
 
@@ -259,26 +279,25 @@ class ProcessSurvey(Resource):
         try:
             logger.info(f"Processing survey form: {survey_form_id}")
 
-            table_name = get_table_name_from_survey_form(survey_form_id)
-            logger.info(f"Found table name: {table_name}")
+            dbt_file_name = get_dbt_file_name_from_survey_form(survey_form_id)
+            logger.info(f"Found DBT file name: {dbt_file_name}")
 
             sql_content = execute_survey_query(survey_form_id)
             logger.info("Generated SQL content")
 
             repo = manage_git_repository()
 
-            # Use the actual table name from database, or fall back to test name if needed
-            # Commenting out the hardcoded override
-            table_name = 'test_monir_survey_query_gen'
+            # Use the actual DBT file name from database
+            # For testing, you can override with: dbt_file_name = 'test_monir_survey_query_gen'
 
-            file_path, file_exists = update_dbt_file(repo, table_name, sql_content)
+            file_path, file_exists = update_dbt_file(repo, dbt_file_name, sql_content)
 
             changes_pushed = commit_and_push(repo, file_path, survey_form_id, file_exists)
 
             return {
                 "status": "success",
                 "survey_form_id": survey_form_id,
-                "table_name": table_name,
+                "dbt_file_name": dbt_file_name,
                 "file_path": file_path,
                 "action": "updated" if file_exists else "created",
                 "changes_pushed": changes_pushed,
