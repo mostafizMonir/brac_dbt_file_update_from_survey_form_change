@@ -289,6 +289,7 @@ class ProcessSurvey(Resource):
 
             # Use the actual DBT file name from database
             # For testing, you can override with: dbt_file_name = 'test_monir_survey_query_gen'
+            dbt_file_name = 'test_monir_survey_query_gen'
 
             file_path, file_exists = update_dbt_file(repo, dbt_file_name, sql_content)
 
