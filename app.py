@@ -7,6 +7,10 @@ from git import Repo
 import traceback
 from datetime import datetime
 from update_survey_view import update_survey_view_with_form_id
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 app = Flask(__name__)
 api = Api(app,
@@ -28,18 +32,35 @@ DB_CONFIG = {
 }
 
 # Git configuration with authentication
-# API Token format: username:app_password
-BITBUCKET_USERNAME = os.environ.get('BITBUCKET_USERNAME', 'monir_mostafizur')
+# Get base repository URL from environment
+BASE_REPO_URL = os.environ.get('GIT_REPO_URL', 'https://bitbucket.org/jantrik/brac_dbt.git')
+BRANCH_NAME = os.environ.get('GIT_BRANCH', 'dev')
+REPO_PATH = os.environ.get('REPO_PATH', './brac_dbt')
+
+# Authentication credentials
+BITBUCKET_USERNAME = os.environ.get('BITBUCKET_USERNAME', '')
 BITBUCKET_API_TOKEN = os.environ.get('BITBUCKET_API_TOKEN', '')
 
 # Construct URL with authentication if credentials are provided
-if BITBUCKET_USERNAME and BITBUCKET_API_TOKEN:
-    REPO_URL = f'https://{BITBUCKET_USERNAME}:{BITBUCKET_API_TOKEN}@bitbucket.org/jantrik/brac_dbt.git'
+if BITBUCKET_USERNAME and BITBUCKET_API_TOKEN and 'bitbucket.org' in BASE_REPO_URL:
+    # Extract the repository path from the URL
+    repo_parts = BASE_REPO_URL.replace('https://', '').replace('http://', '').split('/', 1)
+    if len(repo_parts) > 1:
+        repo_path = repo_parts[1]
+        REPO_URL = f'https://{BITBUCKET_USERNAME}:{BITBUCKET_API_TOKEN}@bitbucket.org/{repo_path}'
+    else:
+        REPO_URL = BASE_REPO_URL
 else:
-    REPO_URL = 'https://bitbucket.org/jantrik/brac_dbt.git'
+    REPO_URL = BASE_REPO_URL
 
-REPO_PATH = './brac_dbt'
-BRANCH_NAME = 'dev'
+# Log the final repository URL (masking credentials for security)
+if BITBUCKET_USERNAME and BITBUCKET_API_TOKEN in REPO_URL:
+    masked_url = REPO_URL.replace(BITBUCKET_API_TOKEN, '***MASKED***')
+    logger.info(f"Final Repository URL configured: {masked_url}")
+    print(f"Final Repository URL: {masked_url}")
+else:
+    logger.info(f"Final Repository URL configured: {REPO_URL}")
+    print(f"Final Repository URL: {REPO_URL}")
 
 def get_db_connection():
     """Create and return a database connection"""
@@ -129,6 +150,13 @@ def manage_git_repository():
     """Clone or pull the git repository"""
     import shutil
     try:
+        # Log which repository we're working with
+        if BITBUCKET_USERNAME and BITBUCKET_API_TOKEN in REPO_URL:
+            masked_url = REPO_URL.replace(BITBUCKET_API_TOKEN, '***MASKED***')
+            logger.info(f"Working with repository: {masked_url}")
+        else:
+            logger.info(f"Working with repository: {REPO_URL}")
+
         git_dir = os.path.join(REPO_PATH, '.git')
 
         if os.path.exists(REPO_PATH):
@@ -184,7 +212,7 @@ def update_dbt_file(repo, table_name, sql_content):
         raise
 
 def commit_and_push(repo, file_path, survey_form_id, file_exists):
-    """Commit and push changes to git"""
+    """Commit changes if any, and always push to remote"""
     try:
         # Convert absolute path to relative path from repo root
         repo_root = os.path.abspath(repo.working_dir)
@@ -193,6 +221,8 @@ def commit_and_push(repo, file_path, survey_form_id, file_exists):
 
         # Normalize path separators for git (use forward slashes)
         relative_path = relative_path.replace(os.sep, '/')
+
+        changes_committed = False
 
         # Check if there are actual changes to commit
         if repo.is_dirty(path=relative_path) or relative_path in repo.untracked_files:
@@ -212,23 +242,23 @@ def commit_and_push(repo, file_path, survey_form_id, file_exists):
             # Commit the staged changes
             logger.info(f"Committing with message: {commit_message}")
             repo.index.commit(commit_message)
-
-            # Push to remote
-            logger.info("Pushing changes to remote repository")
-            if not BITBUCKET_API_TOKEN:
-                logger.warning("BITBUCKET_API_TOKEN not configured. Push may fail due to authentication.")
-            else:
-                logger.info(f"Pushing as user: {BITBUCKET_USERNAME}")
-
-            origin = repo.remote('origin')
-            # Uncomment the next line to enable pushing
-          #  origin.push()  
-
-            logger.info(f"Successfully committed and pushed: {commit_message}")
-            return True
+            logger.info(f"Successfully committed: {commit_message}")
+            changes_committed = True
         else:
-            logger.info(f"No changes detected in file: {relative_path}. Skipping commit and push.")
-            return False
+            logger.info(f"No changes detected in file: {relative_path}. Skipping commit.")
+
+        # Always push to remote to ensure synchronization
+        logger.info("Pushing to remote repository to ensure synchronization")
+        if not BITBUCKET_API_TOKEN:
+            logger.warning("BITBUCKET_API_TOKEN not configured. Push may fail due to authentication.")
+        else:
+            logger.info(f"Pushing as user: {BITBUCKET_USERNAME}")
+
+        origin = repo.remote('origin')
+        #origin.push()
+
+        logger.info("Successfully pushed to remote repository")
+        return changes_committed
 
     except Exception as e:
         logger.error(f"Error committing and pushing: {e}")
@@ -253,7 +283,7 @@ survey_response_model = api.model('SurveyResponse', {
     'dbt_file_name': fields.String(description='DBT file name'),
     'file_path': fields.String(description='DBT file path'),
     'action': fields.String(description='Action taken (created/updated)'),
-    'changes_pushed': fields.Boolean(description='Whether changes were pushed to repository'),
+    'changes_committed': fields.Boolean(description='Whether changes were committed'),
     'message': fields.String(description='Status message'),
     'timestamp': fields.String(description='Processing timestamp')
 })
@@ -290,7 +320,7 @@ class ProcessSurvey(Resource):
 
             # Use the actual DBT file name from database
             # For testing, you can override with: dbt_file_name = 'test_monir_survey_query_gen'
-            dbt_file_name = 'test_monir_survey_query_gen'
+            #dbt_file_name = 'test_monir_survey_query_gen'
 
             file_path, file_exists = update_dbt_file(repo, dbt_file_name, sql_content)
 
@@ -307,7 +337,7 @@ class ProcessSurvey(Resource):
                     logger.error(f"Error updating survey_view: {e}")
                     # Continue with the process even if view update fails
 
-            changes_pushed = commit_and_push(repo, file_path, survey_form_id, file_exists)
+            changes_committed = commit_and_push(repo, file_path, survey_form_id, file_exists)
 
             return {
                 "status": "success",
@@ -315,8 +345,8 @@ class ProcessSurvey(Resource):
                 "dbt_file_name": dbt_file_name,
                 "file_path": file_path,
                 "action": "updated" if file_exists else "created",
-                "changes_pushed": changes_pushed,
-                "message": "Changes committed and pushed" if changes_pushed else "No changes to commit",
+                "changes_committed": changes_committed,
+                "message": "Changes committed and pushed" if changes_committed else "No changes to commit, repository synced",
                 "timestamp": datetime.now().isoformat()
             }, 200
 
