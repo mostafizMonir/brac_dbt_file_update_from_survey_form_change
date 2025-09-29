@@ -6,6 +6,7 @@ from flask_restx import Api, Resource, fields
 from git import Repo
 import traceback
 from datetime import datetime
+from update_survey_view import update_survey_view_with_form_id
 
 app = Flask(__name__)
 api = Api(app,
@@ -292,6 +293,19 @@ class ProcessSurvey(Resource):
             dbt_file_name = 'test_monir_survey_query_gen'
 
             file_path, file_exists = update_dbt_file(repo, dbt_file_name, sql_content)
+
+            # If this is a new file, update the survey_view to include this survey_form_id
+            if not file_exists:
+                logger.info(f"New file created, updating survey_view with survey_form_id: {survey_form_id}")
+                try:
+                    update_result = update_survey_view_with_form_id(survey_form_id)
+                    if update_result:
+                        logger.info(f"Successfully updated survey_view with survey_form_id: {survey_form_id}")
+                    else:
+                        logger.warning(f"Failed to update survey_view with survey_form_id: {survey_form_id}")
+                except Exception as e:
+                    logger.error(f"Error updating survey_view: {e}")
+                    # Continue with the process even if view update fails
 
             changes_pushed = commit_and_push(repo, file_path, survey_form_id, file_exists)
 
