@@ -283,7 +283,7 @@ def commit_and_push(repo, file_path, survey_form_id, file_exists):
         origin = repo.remote('origin')
         origin.push()
 
-        logger.info("Successfully pushed to remote repository")
+        logger.info("**********************end**************Successfully pushed to remote repository")
         return changes_committed
 
     except Exception as e:
@@ -334,7 +334,7 @@ class ProcessSurvey(Resource):
     def post(self, draft_survey_form_id):
         """Process a survey form and update DBT files"""
         try:
-            logger.info(f"Processing survey form: {draft_survey_form_id}")
+            logger.info(f"*********************START****************************Processing survey form: {draft_survey_form_id}")
             survey_form_id = get_survey_form_id_from_draft(draft_survey_form_id)
             dbt_file_name = get_dbt_file_name_from_survey_form(survey_form_id)
             logger.info(f"Found DBT file name: {dbt_file_name}")
