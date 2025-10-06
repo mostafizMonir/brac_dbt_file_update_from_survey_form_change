@@ -66,6 +66,30 @@ def get_db_connection():
     """Create and return a database connection"""
     return psycopg2.connect(**DB_CONFIG)
 
+def get_survey_form_id_from_draft(draft_survey_form_id):
+    """Get survey form ID from draft survey form ID"""
+    conn = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        query = "SELECT id FROM survey_form WHERE draft_survey_form_id = %s"
+        cursor.execute(query, (draft_survey_form_id,))
+        result = cursor.fetchone()
+
+        if result:
+            logger.info(f"Found survey_form_id: {result[0]} for draft_survey_form_id: {draft_survey_form_id}")
+            return result[0]
+        else:
+            raise ValueError(f"No survey form found with draft_survey_form_id: {draft_survey_form_id}")
+
+    except Exception as e:
+        logger.error(f"Error getting survey form ID from draft: {e}")
+        raise
+    finally:
+        if conn:
+            conn.close()
+
 def get_dbt_file_name_from_survey_form(survey_form_id):
     """Get DBT file name from warehouse_dbt_files_survey_form_mapping table,
     fallback to survey_form table if not found"""
@@ -91,6 +115,7 @@ def get_dbt_file_name_from_survey_form(survey_form_id):
         # If not found in mapping table, fallback to survey_form table
         logger.info("DBT file name not found in mapping table, checking survey_form table")
         query = "SELECT table_name FROM survey_form WHERE id = %s"
+        
         cursor.execute(query, (survey_form_id,))
         result = cursor.fetchone()
 
@@ -120,6 +145,7 @@ def execute_survey_query(survey_form_id):
         template_query = template_query.replace("'61f011e4405549849bffe813d12ee511'", f"'{survey_form_id}'")
 
         logger.info(f"Executing first query for survey_form_id: {survey_form_id}")
+        logger.info(f"query : {template_query}")
         cursor.execute(template_query)
         result = cursor.fetchone()
 
@@ -255,7 +281,7 @@ def commit_and_push(repo, file_path, survey_form_id, file_exists):
             logger.info(f"Pushing as user: {BITBUCKET_USERNAME}")
 
         origin = repo.remote('origin')
-        #origin.push()
+        origin.push()
 
         logger.info("Successfully pushed to remote repository")
         return changes_committed
@@ -295,8 +321,8 @@ error_model = api.model('ErrorResponse', {
     'timestamp': fields.String(description='Error timestamp')
 })
 
-@api.route('/process-survey/<string:survey_form_id>')
-@api.param('survey_form_id', 'The survey form ID to process')
+@api.route('/process-survey/<string:draft_survey_form_id>')
+@api.param('draft_survey_form_id', 'The draft survey form ID to process')
 class ProcessSurvey(Resource):
     @api.doc('process_survey',
              responses={
@@ -305,11 +331,11 @@ class ProcessSurvey(Resource):
              })
     @api.marshal_with(survey_response_model, code=200)
     @api.marshal_with(error_model, code=500)
-    def post(self, survey_form_id):
+    def post(self, draft_survey_form_id):
         """Process a survey form and update DBT files"""
         try:
-            logger.info(f"Processing survey form: {survey_form_id}")
-
+            logger.info(f"Processing survey form: {draft_survey_form_id}")
+            survey_form_id = get_survey_form_id_from_draft(draft_survey_form_id)
             dbt_file_name = get_dbt_file_name_from_survey_form(survey_form_id)
             logger.info(f"Found DBT file name: {dbt_file_name}")
 

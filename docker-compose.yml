@@ -4,7 +4,7 @@ services:
     build: .
     container_name: brac-dbt-updater
     ports:
-      - "5000:5000"
+      - "5678:5000"
     environment:
       - DB_HOST=${DB_HOST:-202.4.127.189}
       - DB_PORT=${DB_PORT:-5632}
